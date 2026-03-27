@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from database import get_db, engine
 from models import Vendor, Shipment, Base
-# from scoring import calc_score, check_cert
+from scoring import calc_score, check_cert
 
 Base.metadata.create_all(bind=engine)
 
@@ -17,37 +17,24 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+
 @app.get("/vendors")
 def get_vendors(db: Session = Depends(get_db)):
     vendors = db.query(Vendor).all()
     result = []
     for v in vendors:
+        score = calc_score(v)
+        cert_status = check_cert(v.certification, v.cert_year)
         result.append({
             "id": v.id,
             "name": v.name,
             "carbon_per_shipment": v.carbon_per_shipment,
             "certification": v.certification,
-            "cert_status": "Pending",
-            "score": 50
+            "cert_status": cert_status,
+            "score": score
         })
     return result
-
-# @app.get("/vendors")
-# def get_vendors(db: Session = Depends(get_db)):
-#     vendors = db.query(Vendor).all()
-#     result = []
-#     for v in vendors:
-#         score = calc_score(v)
-#         cert_status = check_cert(v.certification, v.cert_year)
-#         result.append({
-#             "id": v.id,
-#             "name": v.name,
-#             "carbon_per_shipment": v.carbon_per_shipment,
-#             "certification": v.certification,
-#             "cert_status": cert_status,
-#             "score": score
-#         })
-#     return result
 
 
 @app.get("/vendors/{vendor_id}/carbon-score")
@@ -55,16 +42,12 @@ def get_carbon_score(vendor_id: int, db: Session = Depends(get_db)):
     v = db.query(Vendor).filter(Vendor.id == vendor_id).first()
     if not v:
         return {"error": "vendor not found"}
+  
     return {
-    "vendor": v.name,
-    "score": 50,
-    "cert_status": "Pending"
-}
-    # return {
-    #     "vendor": v.name,
-    #     "score": calc_score(v),
-    #     "cert_status": check_cert(v.certification, v.cert_year)
-    # }
+        "vendor": v.name,
+        "score": calc_score(v),
+        "cert_status": check_cert(v.certification, v.cert_year)
+    }
 
 
 @app.get("/shipments")
@@ -77,10 +60,9 @@ def dashboard_summary(db: Session = Depends(get_db)):
     vendors = db.query(Vendor).all()
     shipments = db.query(Shipment).all()
     total_carbon = sum(s.carbon_emitted for s in shipments)
-    # avg_score = sum(calc_score(v) for v in vendors) / len(vendors)
-    # best = max(vendors, key=lambda v: calc_score(v))
-    avg_score = 50
-    best = vendors[0]
+    avg_score = sum(calc_score(v) for v in vendors) / len(vendors)
+    best = max(vendors, key=lambda v: calc_score(v))
+    
     return {
         "total_vendors": len(vendors),
         "total_shipments": len(shipments),
